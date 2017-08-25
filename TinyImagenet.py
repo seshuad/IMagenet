@@ -5,30 +5,31 @@
 # 
 # Tiny Imagenet has 200 Classes, each class has 500 traininig images, 50 Validation Images and 50 test images. Label Classes and Bounding Boxes are provided. More details can be found at https://tiny-imagenet.herokuapp.com/
 # 
-# This challenge is part of Stanford Class CS 231N
+# This challenge is part of Stanford Class CS 213N
 
-# In[27]:
+# In[5]:
 
 import os
 import matplotlib
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from scipy import ndimage
 import matplotlib.image as mpimg
 from sklearn import preprocessing
 
 
-BATCH_SIZE = 10
+BATCH_SIZE = 20
 NUM_CLASSES = 200
 NUM_IMAGES_PER_CLASS = 500
 NUM_IMAGES = NUM_CLASSES * NUM_IMAGES_PER_CLASS
+TRAINING_IMAGES_DIR = './tiny-imagenet-200/train/'
 TRAIN_SIZE = NUM_IMAGES
-NUM_VAL_IMAGES = 10000
+
+NUM_VAL_IMAGES = 9832
+VAL_IMAGES_DIR = './tiny-imagenet-200/val/'
 IMAGE_SIZE = 64
 NUM_CHANNELS = 3
 IMAGE_ARR_SIZE = IMAGE_SIZE * IMAGE_SIZE * NUM_CHANNELS
-
 
 def get_directories():
     datadir = os.environ["KRYLOV_DATA_DIR"]
@@ -41,23 +42,22 @@ def get_directories():
     
     return DATA_DIR, IMAGE_DIRECTORY, TRAINING_IMAGES_DIR, VAL_IMAGES_DIR
 
+def load_training_images(image_dir, batch_size=500):
 
-
-def load_training_images(image_dir, batch_size=NUM_IMAGES_PER_CLASS):
     image_index = 0
     
     images = np.ndarray(shape=(NUM_IMAGES, IMAGE_ARR_SIZE))
     names = []
     labels = []                       
-                          
+    
+    print("Loading training images from ", image_dir)
     # Loop through all the types directories
     for type in os.listdir(image_dir):
         if os.path.isdir(image_dir + type + '/images/'):
-            #print ("Loading images for ", type, image_index)
             type_images = os.listdir(image_dir + type + '/images/')
             # Loop through all the images of a type directory
             batch_index = 0;
-            
+            #print ("Loading Class ", type)
             for image in type_images:
                 image_file = os.path.join(image_dir, type + '/images/', image)
 
@@ -66,7 +66,7 @@ def load_training_images(image_dir, batch_size=NUM_IMAGES_PER_CLASS):
                 #print ('Loaded Image', image_file, image_data.shape)
                 if (image_data.shape == (IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS)):
                     images[image_index, :] = image_data.flatten()
-                    
+
                     labels.append(type)
                     names.append(image)
                     
@@ -75,11 +75,11 @@ def load_training_images(image_dir, batch_size=NUM_IMAGES_PER_CLASS):
                 if (batch_index >= batch_size):
                     break;
     
-    print("Loaded images", image_index)
+    print("Loaded Training Images", image_index)
     return (images, np.asarray(labels), np.asarray(names))
 
 def get_label_from_name(data, name):
-    for idx, row in data.iterrows():        
+    for idx, row in data.iterrows():       
         if (row['File'] == name):
             return row['Class']
         
@@ -97,7 +97,7 @@ def load_validation_images(testdir, validation_data, batch_size=NUM_VAL_IMAGES):
     # Loop through all the images of a val directory
     batch_index = 0;
     
-    print("Loading Validation images...")
+    
     for image in val_images:
         image_file = os.path.join(testdir, 'images/', image)
         #print (testdir, image_file)
@@ -114,30 +114,28 @@ def load_validation_images(testdir, validation_data, batch_size=NUM_VAL_IMAGES):
         if (batch_index >= batch_size):
             break;
     
-    print ("Loaded images ", image_index)
+    print ("Loaded Validation images ", image_index)
     return (images, np.asarray(labels), np.asarray(names))
    
-    
-def get_next_batch(batchsize=100):
+        
+def get_next_batch(batchsize=50):
     for cursor in range(0, len(training_images), batchsize):
         batch = []
         batch.append(training_images[cursor:cursor+batchsize])
         batch.append(training_labels_encoded[cursor:cursor+batchsize])       
         yield batch
-        
 
+    
 def reset_graph(seed=42):
     tf.reset_default_graph()
     tf.set_random_seed(seed)
     np.random.seed(seed)
 
-# In[ ]:
 
+# In[6]:
 DATA_DIR, IMAGE_DIRECTORY, TRAINING_IMAGES_DIR, VAL_IMAGES_DIR = get_directories()
 print (DATA_DIR, IMAGE_DIRECTORY, TRAINING_IMAGES_DIR, VAL_IMAGES_DIR)
-
 training_images, training_labels, training_files = load_training_images(TRAINING_IMAGES_DIR)
-print ("Training Dataset Sizes ", training_images.shape, training_labels.shape, training_files.shape)
 
 shuffle_index = np.random.permutation(len(training_labels))
 training_images = training_images[shuffle_index]
@@ -147,21 +145,22 @@ training_files  = training_files[shuffle_index]
 le = preprocessing.LabelEncoder()
 training_le = le.fit(training_labels)
 training_labels_encoded = training_le.transform(training_labels)
-print ("First 30 Training Labels ", training_labels_encoded[0:30])
+print ("First 30 Training Labels", training_labels_encoded[0:30])
 
-val_data = pd.read_csv(VAL_IMAGES_DIR + 'val_annotations.txt', sep='\t', 
-                       header=None, names=['File', 'Class', 'X', 'Y', 'H', 'W'])
+
+
+val_data = pd.read_csv(VAL_IMAGES_DIR + 'val_annotations.txt', sep='\t', header=None, names=['File', 'Class', 'X', 'Y', 'H', 'W'])
 val_images, val_labels, val_files = load_validation_images(VAL_IMAGES_DIR, val_data)
 val_labels_encoded = training_le.transform(val_labels)
-print ("First 30 Validation Labels", val_labels_encoded[0:30])
+print (val_labels_encoded[0:30])
 
 
-# In[28]:
+# In[7]:
 
 height = IMAGE_SIZE
 width = IMAGE_SIZE
 channels = NUM_CHANNELS
-n_inputs = len(training_images)
+n_inputs = height * width * channels
 n_outputs = 200
 
 reset_graph()
@@ -213,7 +212,7 @@ init = tf.global_variables_initializer()
 saver = tf.train.Saver()
 
 
-# In[ ]:
+# In[9]:
 
 n_epochs = 10
 batch_size = 10
@@ -223,7 +222,7 @@ with tf.Session() as sess:
     for epoch in range(n_epochs):
         for batch in get_next_batch():
             X_batch, y_batch = batch[0], batch[1]
-            #print ('Training set', y_batch)
+            #print ('Training set', X_batch.shape, y_batch.shape)
             sess.run(training_op, feed_dict={X: X_batch, y: y_batch})
        
         acc_train = accuracy.eval(feed_dict={X: X_batch, y: y_batch})
@@ -232,8 +231,6 @@ with tf.Session() as sess:
 
         save_path = saver.save(sess, "./tiny_imagenet")
 
-
-# In[ ]:
 
 
 
