@@ -13,9 +13,9 @@ import os
 import matplotlib
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from scipy import ndimage
 import matplotlib.image as mpimg
-import tensorflow as tf
 from sklearn import preprocessing
 
 
@@ -47,14 +47,13 @@ def load_training_images(image_dir, batch_size=NUM_IMAGES_PER_CLASS):
     image_index = 0
     
     images = np.ndarray(shape=(NUM_IMAGES, IMAGE_ARR_SIZE))
-    names = np.chararray(shape=(NUM_IMAGES))
-    labels = np.chararray(shape=(NUM_IMAGES))                        
+    names = []
+    labels = []                       
                           
-    
     # Loop through all the types directories
     for type in os.listdir(image_dir):
         if os.path.isdir(image_dir + type + '/images/'):
-            print ("Loading images for ", type, image_index)
+            #print ("Loading images for ", type, image_index)
             type_images = os.listdir(image_dir + type + '/images/')
             # Loop through all the images of a type directory
             batch_index = 0;
@@ -67,8 +66,9 @@ def load_training_images(image_dir, batch_size=NUM_IMAGES_PER_CLASS):
                 #print ('Loaded Image', image_file, image_data.shape)
                 if (image_data.shape == (IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS)):
                     images[image_index, :] = image_data.flatten()
-                    labels[image_index] = type
-                    names[image_index] = image
+                    
+                    labels.append(type)
+                    names.append(image)
                     
                     image_index += 1
                     batch_index += 1
@@ -79,8 +79,7 @@ def load_training_images(image_dir, batch_size=NUM_IMAGES_PER_CLASS):
     return (images, np.asarray(labels), np.asarray(names))
 
 def get_label_from_name(data, name):
-    for idx, row in data.iterrows():
-        
+    for idx, row in data.iterrows():        
         if (row['File'] == name):
             return row['Class']
         
@@ -119,14 +118,42 @@ def load_validation_images(testdir, validation_data, batch_size=NUM_VAL_IMAGES):
     return (images, np.asarray(labels), np.asarray(names))
    
     
-def get_next_labels(batchsize=50):
+def get_next_batch(batchsize=100):
     for cursor in range(0, len(training_images), batchsize):
-        yield training_labels_encoded[cursor:cursor+batchsize]  
+        batch = []
+        batch.append(training_images[cursor:cursor+batchsize])
+        batch.append(training_labels_encoded[cursor:cursor+batchsize])       
+        yield batch
+        
 
 def reset_graph(seed=42):
     tf.reset_default_graph()
     tf.set_random_seed(seed)
     np.random.seed(seed)
+
+# In[ ]:
+
+DATA_DIR, IMAGE_DIRECTORY, TRAINING_IMAGES_DIR, VAL_IMAGES_DIR = get_directories()
+print (DATA_DIR, IMAGE_DIRECTORY, TRAINING_IMAGES_DIR, VAL_IMAGES_DIR)
+
+training_images, training_labels, training_files = load_training_images(TRAINING_IMAGES_DIR)
+print ("Training Dataset Sizes ", training_images.shape, training_labels.shape, training_files.shape)
+
+shuffle_index = np.random.permutation(len(training_labels))
+training_images = training_images[shuffle_index]
+training_labels = training_labels[shuffle_index]
+training_files  = training_files[shuffle_index]
+
+le = preprocessing.LabelEncoder()
+training_le = le.fit(training_labels)
+training_labels_encoded = training_le.transform(training_labels)
+print ("First 30 Training Labels ", training_labels_encoded[0:30])
+
+val_data = pd.read_csv(VAL_IMAGES_DIR + 'val_annotations.txt', sep='\t', 
+                       header=None, names=['File', 'Class', 'X', 'Y', 'H', 'W'])
+val_images, val_labels, val_files = load_validation_images(VAL_IMAGES_DIR, val_data)
+val_labels_encoded = training_le.transform(val_labels)
+print ("First 30 Validation Labels", val_labels_encoded[0:30])
 
 
 # In[28]:
@@ -134,9 +161,9 @@ def reset_graph(seed=42):
 height = IMAGE_SIZE
 width = IMAGE_SIZE
 channels = NUM_CHANNELS
-n_inputs = height * width * channels
-
+n_inputs = len(training_images)
 n_outputs = 200
+
 reset_graph()
 
 X = tf.placeholder(tf.float32, shape=[None, n_inputs], name="X")
@@ -188,31 +215,6 @@ saver = tf.train.Saver()
 
 # In[ ]:
 
-DATA_DIR, IMAGE_DIRECTORY, TRAINING_IMAGES_DIR, VAL_IMAGES_DIR = get_directories()
-print (DATA_DIR, IMAGE_DIRECTORY, TRAINING_IMAGES_DIR, VAL_IMAGES_DIR)
-
-training_images, training_labels, training_files = load_training_images(TRAINING_IMAGES_DIR)
-print ("Training Dataset Sizes ", training_images.shape, training_labels.shape, training_files.shape, training_labels_encoded.shape)
-shuffle_index = np.random.permutation(len(training_images))
-training_images = training_images[shuffle_index]
-training_labels = training_labels[shuffle_index]
-training_files  = training_files[shuffle_index]
-
-le = preprocessing.LabelEncoder()
-training_le = le.fit(training_labels)
-training_labels_encoded = training_le.transform(training_labels)
-print ("Unique training labels ", np.unique(training_labels_encoded))
-print ("First 30 Training Labels", training_labels_encoded[0:30])
-
-val_data = pd.read_csv(VAL_IMAGES_DIR + 'val_annotations.txt', sep='\t', 
-                       header=None, names=['File', 'Class', 'X', 'Y', 'H', 'W'])
-val_images, val_labels, val_files = load_validation_images(VAL_IMAGES_DIR, val_data)
-val_labels_encoded = training_le.transform(val_labels)
-print ("First 30 Validation Labels", val_labels_encoded[0:30])
-
-
-# In[ ]:
-
 n_epochs = 10
 batch_size = 10
 
@@ -221,7 +223,7 @@ with tf.Session() as sess:
     for epoch in range(n_epochs):
         for batch in get_next_batch():
             X_batch, y_batch = batch[0], batch[1]
-            print ('Training set', y_batch)
+            #print ('Training set', y_batch)
             sess.run(training_op, feed_dict={X: X_batch, y: y_batch})
        
         acc_train = accuracy.eval(feed_dict={X: X_batch, y: y_batch})
